@@ -95,14 +95,15 @@ async def get_sample_data(selected_date: str = Query(..., description="Selected 
         selected_date_obj = pd.to_datetime(selected_date, format="%d-%m-%Y", errors="coerce")
 
         # ✅ Check if the selected date is within the range
-        if selected_date_obj < min_date or selected_date_obj > max_date:
-            raise HTTPException(
-                status_code=400,
-                detail=f"⚠️ Please select a date within the range: {min_date.strftime('%d-%m-%Y')} to {max_date.strftime('%d-%m-%Y')}"
-            )
+        if selected_date_obj < min_date:
+            return {"error": f"Please select a date within the range: {min_date.strftime('%d-%m-%Y')} to {max_date.strftime('%d-%m-%Y')}"}
+        elif selected_date_obj > max_date:
+            selected_date_obj = max_date  # Auto-select nearest past date
 
         sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
+        # sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
 
+        # ✅ Ensure sample data is not empty before proceeding
         if not sample_data or all(df is None or df.empty for df in sample_data.values()):
             raise ValueError(f"No sample data found for the selected date: {selected_date}")
 
