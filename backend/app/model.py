@@ -673,8 +673,10 @@ def double_modified_q_values(mod_q, selected_date):
     if df_new.empty:
         raise ValueError(f"df_new is empty after processing for {selected_date}")
 
-    # ✅ Store intermediate table for the selected date
-    intermediate_table = df_new[["Log_D/Dmax", "Log_pct_cpft"]]
+    # ✅ Store intermediate table for the selected date (Now includes all relevant values)
+    intermediate_table = df_new[[
+        "Sheet", "Mesh Size", "Particle Size (μm)", "pct_cpft_interpolated", "Log_D/Dmax", "Log_pct_cpft"
+    ]]
 
     print(f"✅ Debugging: Intermediate table generated for {selected_date}:")
     print(intermediate_table.head())
