@@ -226,6 +226,21 @@ def convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_
     return averages
 
 
+def get_sheet_constants_from_proportions(proportions):
+    """
+    Computes sheet constants dynamically based on user-updated proportions.
+    """
+    proportion_values = list(proportions.values())
+    sheet_names = ["7-12", "14-30", "36-70", "80-180", "220F"]
+
+    sheet_constants = {}
+    for i in range(len(proportion_values) - 1):  
+        sheet_constant = round(sum(proportion_values[i+1:]) * 100)  
+        sheet_constants[sheet_names[i]] = sheet_constant
+
+    sheet_constants[sheet_names[-1]] = 0  
+    return sheet_constants
+
 
 
 # Step 11: Calculate reverse cumulative sum
@@ -446,6 +461,7 @@ def prepare_mod_q_values(final_df, selected_date, packing_densities):
     for density in packing_densities:
         density_col = f"pct_{int(density * 100)}_poros_CPFT"
         mod_q[selected_date][density_col] = mod_q[selected_date]["pct_CPFT"] * density  # 🔥 Compute dynamically
+
 
     return mod_q
 
@@ -673,7 +689,7 @@ def double_modified_q_values(mod_q, selected_date):
     if df_new.empty:
         raise ValueError(f"df_new is empty after processing for {selected_date}")
 
-    # ✅ Store intermediate table for the selected date (Now includes all relevant values)
+    # ✅ Store intermediate table for the selected date
     intermediate_table = df_new[[
         "Sheet", "Mesh Size", "Particle Size (μm)", "pct_cpft_interpolated", "Log_D/Dmax", "Log_pct_cpft"
     ]]

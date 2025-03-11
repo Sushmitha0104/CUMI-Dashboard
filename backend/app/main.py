@@ -7,7 +7,7 @@ from app.model import (
     read_excel_file, clean_data, standardize_column_names_and_convert_dates,
     get_available_date_range, get_sample_data_for_date, calculate_gbd_values,
     convert_to_numeric_and_calculate_average, calculate_volume, sum_volumes,
-    calculate_sg_mix, 
+    calculate_sg_mix, get_sheet_constants_from_proportions, 
     convert_to_numeric_and_calculate_average_for_q_values, drop_last_3_and_reverse_cumsum,
     calculate_cpft, calculate_pct_cpft, merge_pct_cpft_into_df,
     calculate_interpolated_values, drop_and_reset_indices,
@@ -16,12 +16,15 @@ from app.model import (
 )
 
 app = FastAPI()
+# ✅ Configure logging
+# logging.basicConfig(level=logging.INFO)
+# logger = logging.getLogger(__name__)
 
 # Define the required sheets and column drop list
 required_sheets = ["7-12", "14-30", "36-70", "80-180", "220F"]
 column_to_drop = ["Samples No."]
-proportions = {'7-12': 0.35, '14-30': 0.20, '36-70': 0.15, '80-180': 0.10, '220F': 0.20}
-sheet_constants = {'7-12': 65, '14-30': 45, '36-70': 30, '80-180': 20, '220F': 0}
+# proportions = {'7-12': 0.35, '14-30': 0.20, '36-70': 0.15, '80-180': 0.10, '220F': 0.20}
+# sheet_constants = {'7-12': 65, '14-30': 45, '36-70': 30, '80-180': 20, '220F': 0}
 mesh_size_to_particle_size = {'+6': 3360, '+8': 2380, '+10': 2000, '+14': 1410, '+16': 1190, '+12': 1680, '+18': 1000, '+30': 595, '+40': 420, '+50': 297, '+70': 210, '+100': 149, '+80': 177, '+120': 125, '+140': 105, '+200': 74, '+230': 63, '+270': 53, '+325': 44}
 
 # Store uploaded file in memory for further processing
@@ -119,7 +122,9 @@ async def get_sample_data(selected_date: str = Query(..., description="Selected 
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
     
 @app.get("/calculate_gbd/")
-async def calculate_gbd(selected_date: str = Query(...), packing_density: str = Query(...)):
+async def calculate_gbd( selected_date: str = Query(...), 
+    packing_density: str = Query(...),
+    updated_proportions: str = Query(...)):
     """
     Calculate GBD values dynamically for user-entered packing density values.
     """
@@ -141,9 +146,17 @@ async def calculate_gbd(selected_date: str = Query(...), packing_density: str = 
         if not sample_data or all(df is None or df.empty for df in sample_data.values()):
             raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
 
+         # ✅ Convert user-input proportions to a dictionary
+        proportions_list = [float(value.strip()) for value in updated_proportions.split(",")]
+        proportions_dict = dict(zip(required_sheets, proportions_list))  # Assign proportions to correct sheets
+
+        # ✅ Ensure proportions sum up to 1
+        if round(sum(proportions_dict.values()), 4) != 1.0:
+            raise HTTPException(status_code=400, detail="Proportions must sum up to 1. Please check input values.")
+
         # Compute intermediate values
         averages = convert_to_numeric_and_calculate_average(sample_data)
-        volume_data = calculate_volume(averages, proportions)
+        volume_data = calculate_volume(averages, proportions_dict)
         total_volume = sum_volumes(volume_data)
         sg_mix_data = calculate_sg_mix(total_volume)
 
@@ -170,13 +183,17 @@ async def calculate_gbd(selected_date: str = Query(...), packing_density: str = 
 
 
 @app.get("/calculate_q_value/")
-async def calculate_q_value(selected_date: str = Query(...)):
+async def calculate_q_value(
+    selected_date: str = Query(...), 
+    updated_proportions: str = Query(None)
+):
     """
     Calculate q-value using Andreasen Equation for a given date.
     """
     global cached_final_df, cached_q_values  # Allow modification of global variable
 
     try:
+
         if "file" not in file_storage:
             raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
 
@@ -190,6 +207,13 @@ async def calculate_q_value(selected_date: str = Query(...)):
         sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
         if not sample_data or all(df is None or df.empty for df in sample_data.values()):
             raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
+        
+        # ✅ Convert proportions from query string to dictionary
+        proportions_list = [float(value) for value in updated_proportions.split(",")]
+        proportions = dict(zip(["7-12", "14-30", "36-70", "80-180", "220F"], proportions_list))
+
+        # ✅ Compute sheet constants dynamically
+        sheet_constants = get_sheet_constants_from_proportions(proportions)
 
         # ✅ Compute q-value averages safely
         averages = convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_date)
@@ -261,35 +285,87 @@ async def calculate_q_value(selected_date: str = Query(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
-
 @app.get("/calculate_q_value_modified_andreason/")
 async def calculate_q_value_modified_andreason(
     selected_date: str = Query(...),
-    packing_density: str = Query(...)
+    packing_density: str = Query(...),
+    updated_proportions: str = Query(None)
 ):
     """
     Calculate q-values using the Modified Andreasen Equation for user-defined packing densities.
     """
     global cached_final_df, cached_q_values  # Use the cached final_df instead of recomputing
     try:
-        # ✅ Ensure q-values are calculated first
-        if selected_date not in cached_q_values or selected_date not in cached_final_df:
-            print(f"ℹ️ Calling calculate_q_value() first to store final_df for {selected_date}...")
-            q_response = await calculate_q_value(selected_date)  # Compute normal q-values first
+        
 
-            # ✅ Properly store final_df after calling calculate_q_value
-            if "intermediate_table" in q_response:
-                cached_final_df[selected_date] = pd.DataFrame(q_response["intermediate_table"])
+        if "file" not in file_storage:
+            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
 
-        # ✅ Now check final_df availability
-        if (selected_date not in cached_final_df 
-                or not isinstance(cached_final_df[selected_date], pd.DataFrame) 
-                or cached_final_df[selected_date].empty):
-            print(f"🚨 Debugging: No valid data found for {selected_date} in cached_final_df.")
-            raise HTTPException(status_code=500, detail=f"No valid data for merging on {selected_date}")
+        file_obj = file_storage["file"]
+        file_obj.seek(0)
 
-        print(f"🛠️ Debug: final_df[{selected_date}] columns: {cached_final_df[selected_date].columns if isinstance(cached_final_df[selected_date], pd.DataFrame) else 'Not a DataFrame'}")
-        print(f"🛠️ Debug: final_df[{selected_date}] data:\n{cached_final_df[selected_date]}")
+        sheets = read_excel_file(file_obj, required_sheets)
+        cleaned_sheets = clean_data(sheets, column_to_drop)
+        standardized_sheets = standardize_column_names_and_convert_dates(cleaned_sheets)
+
+        sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
+        if not sample_data or all(df is None or df.empty for df in sample_data.values()):
+            raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
+
+        # ✅ Convert proportions from query string to dictionary
+        proportions_list = [float(value) for value in updated_proportions.split(",")]
+        proportions = dict(zip(["7-12", "14-30", "36-70", "80-180", "220F"], proportions_list))
+
+        # ✅ Compute sheet constants dynamically
+        sheet_constants = get_sheet_constants_from_proportions(proportions)
+        
+        # ✅ Compute q-value averages safely
+        averages = convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_date)
+        if selected_date not in averages or not averages[selected_date]:
+            raise HTTPException(status_code=400, detail=f"No valid averages computed for {selected_date}")
+
+        weights, cum_sum = drop_last_3_and_reverse_cumsum(averages, selected_date)
+        cpft = calculate_cpft(cum_sum, proportions, selected_date)
+        pct_cpft = calculate_pct_cpft(cpft, sheet_constants, selected_date)
+
+        # ✅ Merge into single DataFrame
+        final_df = merge_pct_cpft_into_df(mesh_size_to_particle_size, pct_cpft)
+        
+        # ✅ 🔥 Insert the New Sample Here (Before Interpolation)
+        new_sample = pd.DataFrame({
+            'Sheet': ['7-12'],
+            'Mesh Size': ['+1'],
+            'cpft': [100],
+            'pct_cpft': [100],
+            'Particle Size': [3500]  # This column was added during merging
+        })
+
+        # ✅ Insert new sample at the beginning (index 0) for each date
+        for date in final_df:
+            final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
+
+        
+        
+        final_df = calculate_interpolated_values(final_df)
+        final_df = drop_and_reset_indices(final_df)
+        final_df = normalize_particle_size(final_df)
+
+        # final_df = add_sample_for_q_values(final_df)  # ✅ Add new sample to dataframe
+
+       
+        # ✅ Ensure final_df is correctly formatted before storing
+        if isinstance(final_df, dict):
+            # ✅ If dictionary contains DataFrames, merge them
+            if all(isinstance(v, pd.DataFrame) for v in final_df.values()):
+                cached_final_df[selected_date] = pd.concat(final_df.values(), ignore_index=True)
+            else:
+                raise ValueError(f"Invalid final_df format for {selected_date}: Expected DataFrames, got {type(final_df)}")
+        else:
+            cached_final_df[selected_date] = final_df
+
+        cached_q_values[selected_date] = q_value_prediction(final_df)  # Store q-values for later use
+
+       
 
         # ✅ Convert user input to a list of packing densities
         try:
@@ -297,9 +373,10 @@ async def calculate_q_value_modified_andreason(
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid packing density input. Please enter valid numbers.")
         
+        
         # ✅ Prepare data for q-value optimization
         mod_q = prepare_mod_q_values(cached_final_df, selected_date, packing_densities)
-  
+        
 
         # 🔥 **Check if `mod_q` is empty**
         if not mod_q:
@@ -307,10 +384,10 @@ async def calculate_q_value_modified_andreason(
 
         # ✅ Compute modified q-values dynamically for user-defined densities
         optimized_q_values_df = predict_mod_q_values(mod_q, packing_densities)
-
+        print("Before cpft")
         # ✅ Now call error calculation after ensuring required columns exist
         cpft_error_dict = calculate_cpft_error_dict(mod_q, optimized_q_values_df.to_dict(orient="records"), packing_densities)
-
+        print("After cpft")
         # ✅ Rename columns for better readability before returning
         # for date in cpft_error_dict:
         #     cpft_error_dict[date] = cpft_error_dict[date].rename(columns={
@@ -326,7 +403,7 @@ async def calculate_q_value_modified_andreason(
         #             f"absolute_error_{int(density * 100)}": f"Absolute Error ({int(density * 100)}% Packing Density)"
         #         }, inplace=True)
 
-
+        print("Before return")
 
         return {
             "message": f"q-value Calculation using Modified Andreasen Eq. for {selected_date}",
@@ -335,36 +412,92 @@ async def calculate_q_value_modified_andreason(
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}   This is the error")
     
 
 
 # ✅ **New API Endpoint for Double Modified q-values**
 @app.get("/calculate_q_value_double_modified/")
-async def calculate_q_value_double_modified(selected_date: str = Query(...)):
+async def calculate_q_value_double_modified(
+    selected_date: str = Query(...), 
+    updated_proportions: str = Query(None)
+):
     """
     Calculate q-values using the **Double Modified Andreasen Equation** for a given date.
     """
     global cached_final_df  # Use cached final_df instead of recomputing
 
     try:
-        # ✅ Ensure q-values are calculated first
-        if selected_date not in cached_q_values or selected_date not in cached_final_df:
-            print(f"ℹ️ Calling calculate_q_value() first to store final_df for {selected_date}...")
-            q_response = await calculate_q_value(selected_date)  # Compute normal q-values first
 
-            # ✅ Properly store final_df after calling calculate_q_value
-            if "intermediate_table" in q_response:
-                cached_final_df[selected_date] = pd.DataFrame(q_response["intermediate_table"])
+        if "file" not in file_storage:
+            raise HTTPException(status_code=400, detail="No file uploaded. Please upload a file first.")
 
-        # ✅ Now check final_df availability
-        if (selected_date not in cached_final_df 
-                or not isinstance(cached_final_df[selected_date], pd.DataFrame) 
-                or cached_final_df[selected_date].empty):
-            print(f"🚨 Debugging: No valid data found for {selected_date} in cached_final_df.")
-            raise HTTPException(status_code=500, detail=f"No valid data for merging on {selected_date}")
+        file_obj = file_storage["file"]
+        file_obj.seek(0)
 
-         # ✅ Fix: Use `prepare_mod_q_values_double_modified()`
+        sheets = read_excel_file(file_obj, required_sheets)
+        cleaned_sheets = clean_data(sheets, column_to_drop)
+        standardized_sheets = standardize_column_names_and_convert_dates(cleaned_sheets)
+
+        sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
+        if not sample_data or all(df is None or df.empty for df in sample_data.values()):
+            raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
+        
+        # ✅ Convert proportions from query string to dictionary
+        proportions_list = [float(value) for value in updated_proportions.split(",")]
+        proportions = dict(zip(["7-12", "14-30", "36-70", "80-180", "220F"], proportions_list))
+
+        # ✅ Compute sheet constants dynamically
+        sheet_constants = get_sheet_constants_from_proportions(proportions)
+
+
+        # ✅ Compute q-value averages safely
+        averages = convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_date)
+        if selected_date not in averages or not averages[selected_date]:
+            raise HTTPException(status_code=400, detail=f"No valid averages computed for {selected_date}")
+
+        weights, cum_sum = drop_last_3_and_reverse_cumsum(averages, selected_date)
+        cpft = calculate_cpft(cum_sum, proportions, selected_date)
+        pct_cpft = calculate_pct_cpft(cpft, sheet_constants, selected_date)
+
+        # ✅ Merge into single DataFrame
+        final_df = merge_pct_cpft_into_df(mesh_size_to_particle_size, pct_cpft)
+        
+        # ✅ 🔥 Insert the New Sample Here (Before Interpolation)
+        new_sample = pd.DataFrame({
+            'Sheet': ['7-12'],
+            'Mesh Size': ['+1'],
+            'cpft': [100],
+            'pct_cpft': [100],
+            'Particle Size': [3500]  # This column was added during merging
+        })
+
+        # ✅ Insert new sample at the beginning (index 0) for each date
+        for date in final_df:
+            final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
+
+        final_df = calculate_interpolated_values(final_df)
+        final_df = drop_and_reset_indices(final_df)
+        final_df = normalize_particle_size(final_df)
+
+        # final_df = add_sample_for_q_values(final_df)  # ✅ Add new sample to dataframe
+
+       
+        # ✅ Ensure final_df is correctly formatted before storing
+        if isinstance(final_df, dict):
+            # ✅ If dictionary contains DataFrames, merge them
+            if all(isinstance(v, pd.DataFrame) for v in final_df.values()):
+                cached_final_df[selected_date] = pd.concat(final_df.values(), ignore_index=True)
+            else:
+                raise ValueError(f"Invalid final_df format for {selected_date}: Expected DataFrames, got {type(final_df)}")
+        else:
+            cached_final_df[selected_date] = final_df
+
+        cached_q_values[selected_date] = q_value_prediction(final_df)  # Store q-values for later use
+
+
+        
+        # ✅ Fix: Use `prepare_mod_q_values_double_modified()`
         mod_q = prepare_mod_q_values_double_modified(cached_final_df, selected_date)
 
          # 🔥 **Check if `mod_q` is empty**
