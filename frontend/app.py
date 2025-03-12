@@ -63,7 +63,7 @@ st.markdown(
 
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
-BASE_URL = "http://backend:8000"
+BASE_URL = "https://cumi-dashboard.onrender.com"
 
 available_dates = None
 selected_date = None
