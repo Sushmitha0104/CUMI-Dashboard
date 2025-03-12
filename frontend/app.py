@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import requests
+import time
 from datetime import datetime
 
 
@@ -68,6 +69,39 @@ BASE_URL = "https://cumi-dashboard.onrender.com"
 available_dates = None
 selected_date = None
 sample_data = None
+
+# Add a placeholder for the reload message
+reload_message = st.empty()
+
+# Inject JavaScript to detect inactivity
+st.markdown(
+    """
+    <script>
+    let timeout;
+    
+    function resetTimer() {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            document.getElementById("reload-message").style.display = "block";
+        }, 60000); // 60 seconds of inactivity
+    }
+
+    document.onmousemove = resetTimer;
+    document.onkeypress = resetTimer;
+    document.onload = resetTimer;
+
+    </script>
+    <div id="reload-message" style="display:none; text-align: center; padding: 10px; background-color: yellow;">
+        You have been inactive. <a href="javascript:location.reload();">Click here to reload</a>
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# Your actual dashboard code starts here
+time.sleep(2)  # Simulate dashboard loading
+st.write("Welcome to the dashboard! Stay active to keep it running.")
+
 
 if "default_proportions" not in st.session_state:
     st.session_state["default_proportions"] = [0.35, 0.20, 0.15, 0.10, 0.20]
