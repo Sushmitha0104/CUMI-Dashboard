@@ -31,13 +31,13 @@ def plot_q_value_regression(df):
     st.pyplot(plt)
 
 # Background ping to refresh every 5 minutes
-st_autorefresh(interval=30000, key="refresh")
+st_autorefresh(interval=300000, key="refresh")
 
 # Track inactivity time
 if "last_active" not in st.session_state:
     st.session_state.last_active = time.time()
 
-inactive_threshold = 30  # 5 minutes
+inactive_threshold = 5* 60  # 5 minutes
 
 # Check if inactive
 inactive = time.time() - st.session_state.last_active > inactive_threshold
