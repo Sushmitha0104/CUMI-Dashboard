@@ -3,9 +3,9 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import requests
-
 from datetime import datetime
-
+import time
+from streamlit_autorefresh import st_autorefresh
 
 def plot_q_value_regression(df):
     """
@@ -30,28 +30,69 @@ def plot_q_value_regression(df):
     plt.grid()
     st.pyplot(plt)
 
-# def plot_double_modified_q_regression(df):
-#     """
-#     Plots regression graph for Double Modified q-value calculation.
-#     """
-#     if "x_value" not in df.columns or "y_value" not in df.columns:
-#         st.warning("⚠️ Required columns for regression are missing.")
-#         return
+# Background ping to refresh every 5 minutes
+st_autorefresh(interval=30000, key="refresh")
 
-#     plt.figure(figsize=(6, 4))
-#     plt.scatter(df["x_value"], df["y_value"], label="Data Points", color="blue")
+# Track inactivity time
+if "last_active" not in st.session_state:
+    st.session_state.last_active = time.time()
 
-#     # ✅ Perform regression and plot line
-#     slope, intercept = np.polyfit(df["x_value"], df["y_value"], 1)
-#     reg_line = slope * df["x_value"] + intercept
-#     plt.plot(df["x_value"], reg_line, label=f"Regression Line (q = {slope:.4f})", color="red")
+inactive_threshold = 30  # 5 minutes
 
-#     plt.xlabel("ln(D - D_min) - ln(D_max - D_min)")
-#     plt.ylabel("ln(% CPFT)")
-#     plt.title("Double Modified q-Value Regression")
-#     plt.legend()
-#     plt.grid()
-#     st.pyplot(plt)
+# Check if inactive
+inactive = time.time() - st.session_state.last_active > inactive_threshold
+
+# JavaScript & CSS for semi-transparent overlay
+overlay_script = """
+<script>
+    function removeOverlay() {
+        var overlay = document.getElementById("inactivityOverlay");
+        if (overlay) {
+            overlay.style.display = "none";
+        }
+    }
+    document.addEventListener("click", removeOverlay);
+</script>
+<style>
+    .overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.3); /* Slightly dark transparent overlay */
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    }
+    .overlay-content {
+        background: rgba(255, 221, 221, 0.9); /* Light red (error-like) */
+        padding: 20px;
+        border-radius: 10px;
+        text-align: center;
+        box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.2);
+        color: #800000; /* Deep red/maroon */
+        font-size: 20px;
+        font-weight: bold;
+        backdrop-filter: blur(5px);
+    }
+</style>
+"""
+
+st.markdown(overlay_script, unsafe_allow_html=True)
+
+if inactive:
+    st.markdown("""
+    <div id="inactivityOverlay" class="overlay">
+        <div class="overlay-content">
+            <p>Dashboard is inactive! Please reload to continue.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+if not inactive:
+    st.session_state.last_active = time.time()
 
 st.markdown(
     """
