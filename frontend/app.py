@@ -37,7 +37,7 @@ st_autorefresh(interval=300000, key="refresh")
 if "last_active" not in st.session_state:
     st.session_state.last_active = time.time()
 
-inactive_threshold = 5* 60  # 5 minutes
+inactive_threshold = 5*60  # 5 minutes
 
 # Check if inactive
 inactive = time.time() - st.session_state.last_active > inactive_threshold
@@ -125,8 +125,20 @@ if uploaded_file:
     st.write("File uploaded successfully.")
     
     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-    with st.spinner("⏳ The server is waking up! This may take 50-60 seconds. Please wait..."):
-        response = requests.post(f"{BASE_URL}/upload/", files=files)
+    start_time = time.time()  # Start timing
+    response = requests.post(f"{BASE_URL}/upload/", files=files)  # Send request
+
+    
+    elapsed_time = time.time() - start_time  # Measure elapsed time
+
+    if elapsed_time > 5:  # Only show spinner if response time exceeds 10 seconds
+        with st.spinner("⏳ The server is waking up! This may take 50-60 seconds. Please wait..."):
+            while elapsed_time < 50:  # Max wait time
+                response = requests.post(f"{BASE_URL}/upload/", files=files)
+                elapsed_time = time.time() - start_time
+
+                if response.status_code == 200:
+                    break  # Stop waiting when response is received
     
     if response.status_code == 200:
         result = response.json()
