@@ -125,7 +125,8 @@ if uploaded_file:
     st.write("File uploaded successfully.")
     
     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-    response = requests.post(f"{BASE_URL}/upload/", files=files)
+    with st.spinner("⏳ The server is waking up! This may take 50-60 seconds. Please wait..."):
+        response = requests.post(f"{BASE_URL}/upload/", files=files)
     
     if response.status_code == 200:
         result = response.json()
