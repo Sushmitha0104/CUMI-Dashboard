@@ -71,10 +71,8 @@ sample_data = None
 
 if "default_proportions" not in st.session_state:
     st.session_state["default_proportions"] = [0.35, 0.20, 0.15, 0.10, 0.20]
-    st.session_state["table_width"] = "auto"
 if "proportions" not in st.session_state:
     st.session_state["proportions"] = st.session_state["default_proportions"].copy()
-    st.session_state["table_width"] = "auto"
 
 
 if uploaded_file:
