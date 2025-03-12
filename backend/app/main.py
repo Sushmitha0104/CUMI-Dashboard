@@ -33,13 +33,7 @@ file_storage = {}
 cached_final_df = {}
 cached_q_values = {}  # Store previously computed q-values to avoid redundant calculations
 
-@app.head("/")
-async def head_root():
-    return {}  # Empty response for HEAD requests
 
-@app.get("/")
-def read_root():
-    return {"message": "Backend is running!"}
 
 @app.post("/upload/")
 async def upload_file(file: UploadFile = File(...)):
