@@ -4,7 +4,7 @@ import numpy as np
 from fastapi.responses import JSONResponse 
 from io import BytesIO
 import time
-from app.model import (
+from app.mod import (
     read_excel_file, clean_data, standardize_column_names_and_convert_dates,
     get_available_date_range, get_sample_data_for_date, calculate_gbd_values,
     convert_to_numeric_and_calculate_average, calculate_volume, sum_volumes,
@@ -216,9 +216,11 @@ async def calculate_q_value(
         # ✅ Convert proportions from query string to dictionary
         proportions_list = [float(value) for value in updated_proportions.split(",")]
         proportions = dict(zip(["7-12", "14-30", "36-70", "80-180", "220F"], proportions_list))
+        print(proportions)
 
         # ✅ Compute sheet constants dynamically
         sheet_constants = get_sheet_constants_from_proportions(proportions)
+        print(sheet_constants)
 
         # ✅ Compute q-value averages safely
         averages = convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_date)
@@ -226,6 +228,7 @@ async def calculate_q_value(
             raise HTTPException(status_code=400, detail=f"No valid averages computed for {selected_date}")
 
         weights, cum_sum = drop_last_3_and_reverse_cumsum(averages, selected_date)
+        print(cum_sum)
         cpft = calculate_cpft(cum_sum, proportions, selected_date)
         pct_cpft = calculate_pct_cpft(cpft, sheet_constants, selected_date)
 

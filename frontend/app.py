@@ -222,8 +222,13 @@ if uploaded_file:
                         updated_proportions = updated_proportions_df["Proportion"].tolist()
                         total_proportion = sum(updated_proportions)
 
+                        # ✅ Check if any proportion is negative
+                        if any(p < 0 for p in updated_proportions):
+                            st.error("❌ Proportion values cannot be negative. Please enter positive values.")
+                            calculate_button_label = None  # Prevent calculations
+
                         # ✅ Ensure total proportion is exactly 1 before proceeding
-                        if total_proportion != 1:
+                        elif total_proportion != 1:
                             st.error(f"⚠️ The sum of all proportions must be exactly 1. Currently: {total_proportion:.4f}")
                             calculate_button_label = None  # Prevent calculations
                         else:
@@ -271,9 +276,15 @@ if uploaded_file:
                             total_proportion = sum(updated_proportions)
 
 
-                            if total_proportion != 1:
+                            # ✅ Check if any proportion is negative
+                            if any(p < 0 for p in updated_proportions):
+                                st.error("❌ Proportion values cannot be negative. Please enter positive values.")
+                                calculate_button_label = None  # Prevent calculations
+
+                            # ✅ Ensure total proportion is exactly 1 before proceeding
+                            elif total_proportion != 1:
                                 st.error(f"⚠️ The sum of all proportions must be exactly 1. Currently: {total_proportion:.4f}")
-                                calculate_button_label = None  
+                                calculate_button_label = None  # Prevent calculations 
                             else:
                                 st.session_state["proportions"] = updated_proportions
                                 calculate_button_label = f"Calculate {q_type}"
@@ -298,8 +309,13 @@ if uploaded_file:
                             updated_proportions = updated_proportions_df["Proportion"].tolist()
                             total_proportion = sum(updated_proportions)
 
+                            # ✅ Check if any proportion is negative
+                            if any(p < 0 for p in updated_proportions):
+                                st.error("❌ Proportion values cannot be negative. Please enter positive values.")
+                                calculate_button_label = None  # Prevent calculations
+
                             # ✅ Ensure total proportion is exactly 1 before proceeding
-                            if total_proportion != 1:
+                            elif total_proportion != 1:
                                 st.error(f"⚠️ The sum of all proportions must be exactly 1. Currently: {total_proportion:.4f}")
                                 calculate_button_label = None  # Prevent calculations
                             else:
@@ -340,10 +356,15 @@ if uploaded_file:
                             updated_proportions = updated_proportions_df["Proportion"].tolist()
                             total_proportion = sum(updated_proportions)
 
-                            # # ✅ Ensure total proportion is exactly 1 before proceeding
-                            if total_proportion != 1:
-                                st.error(f"⚠️ The sum of all proportions must be exactly 1. Currently: {total_proportion:.4f}")
-                                calculate_button_label = None 
+                            # ✅ Check if any proportion is negative
+                            if any(p < 0 for p in updated_proportions):
+                                st.error("❌ Proportion values cannot be negative. Please enter positive values.")
+                                calculate_button_label = None  # Prevent calculations
+
+                            # ✅ Ensure total proportion is exactly 1 before proceeding
+                            elif total_proportion != 1:
+                                st.error(f"⚠️ The sum of all proportions must be exactly 1. (Currently: {total_proportion:.4f})")
+                                calculate_button_label = None  # Prevent calculations
                             else:
                                 st.session_state["proportions"] = updated_proportions
                                 calculate_button_label = f"Calculate {q_type}"

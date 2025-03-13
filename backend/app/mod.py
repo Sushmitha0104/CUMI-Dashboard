@@ -214,6 +214,8 @@ def convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_
         if df is None or df.empty:
             averages[selected_date][sheet] = None
             continue
+      
+
 
         numeric_df = df.iloc[:, 1:].apply(pd.to_numeric, errors="coerce")
         numeric_df = numeric_df.dropna(axis=1, how="all")
@@ -255,6 +257,7 @@ def drop_last_3_and_reverse_cumsum(average_data, selected_date):
     cum_sum[date] = {}
 
     for sheet, df in sheet_data.items():
+
         if df is None or not isinstance(df, pd.DataFrame):
             weights[date][sheet] = None
             cum_sum[date][sheet] = None
@@ -286,6 +289,7 @@ def drop_last_3_and_reverse_cumsum(average_data, selected_date):
 
 # Step 12: Calculate cpft
 def calculate_cpft(cum_sum, multipliers, selected_date):
+
     """
     Calculates CPFT values for the selected date.
     """
@@ -295,12 +299,15 @@ def calculate_cpft(cum_sum, multipliers, selected_date):
     cpft = {}
     cpft[date] = {}
 
-    for sheet, df in sheet_data.items():
+    for sheet in multipliers.keys():  # Ensure all sheets are processed
+        df = sheet_data.get(sheet)
+
         if df is not None:
-            multiplier = multipliers.get(sheet)
-            if multiplier:
-                df['cpft'] = df['Cumulative Sum'] * multiplier
-                cpft[date][sheet] = df
+            multiplier = multipliers.get(sheet, 0)  # ✅ Use 0 if multiplier is missing
+            df['cpft'] = df['Cumulative Sum'] * multiplier
+            cpft[date][sheet] = df
+        else:
+            cpft[date][sheet] = None  # ✅ Maintain structure
 
     return cpft
 
@@ -334,7 +341,9 @@ def merge_pct_cpft_into_df(mesh_size_to_particle_size, pct_cpft):
         valid_dfs = [df for df in sheet_data.values() if df is not None and not df.empty]
 
         if not valid_dfs:  # ✅ Prevent "No objects to concatenate"
-            raise ValueError(f"No valid data for merging on {date}")
+            final_df[date] = pd.DataFrame(columns=['Sheet', 'Mesh Size', 'cpft', 'pct_cpft', 'Particle Size'])
+            continue
+        
 
         final_df[date] = pd.concat(valid_dfs, ignore_index=True)
         final_df[date]['Particle Size'] = final_df[date]['Mesh Size'].map(mesh_size_to_particle_size)
@@ -358,11 +367,8 @@ def calculate_interpolated_values(final_df, rows_to_interpolate=[6, 16, 19, 20])
 
 
         for i in rows_to_interpolate:
-            if i >= len(df):  # Ensure index is within bounds
+            if i >= len(df) or i not in df.index:  # Ensure index is within bounds
                 continue  
-
-            if i not in df.index:  # ✅ Check if index exists before accessing
-                continue  # Skip interpolation for missing rows
 
             current_particle_size = df.loc[i, 'Particle Size']
 
@@ -395,7 +401,7 @@ def drop_and_reset_indices(final_df, rows_to_drop=[9, 13, 14, 17]):
     Drops specified rows and resets index for each date's DataFrame in final_df.
     """
     for date, df in final_df.items():
-        df = df.drop(rows_to_drop, axis=0)
+        df = df.drop(rows_to_drop, axis=0, errors='ignore')
         final_df[date] = df.reset_index(drop=True)
     
     return final_df
@@ -406,10 +412,10 @@ def normalize_particle_size(final_df):
     Normalizes the Particle Size by dividing by the maximum Particle Size for each date.
     """
     for date, df in final_df.items():
-      
-        
-        d_max = df["Particle Size"].max()
-        df['Normalized_D'] = df['Particle Size'] / d_max
+
+        if not df.empty:
+            d_max = df["Particle Size"].max()
+            df['Normalized_D'] = df['Particle Size'] / d_max
       
     
     return final_df
