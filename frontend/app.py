@@ -6,6 +6,7 @@ import requests
 from datetime import datetime
 import time
 from streamlit_autorefresh import st_autorefresh
+import threading
 
 def plot_q_value_regression(df):
     """
@@ -31,13 +32,13 @@ def plot_q_value_regression(df):
     st.pyplot(plt)
 
 # Background ping to refresh every 5 minutes
-st_autorefresh(interval=30000, key="refresh")
+st_autorefresh(interval=300000, key="refresh")
 
 # Track inactivity time
 if "last_active" not in st.session_state:
     st.session_state.last_active = time.time()
 
-inactive_threshold = 30  # 5 minutes
+inactive_threshold = 5*60  # 5 minutes
 
 # Check if inactive
 inactive = time.time() - st.session_state.last_active > inactive_threshold
@@ -102,6 +103,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Function to check server status
+def is_backend_active():
+    try:
+        response = requests.get(f"{BASE_URL}/ping", timeout=3)  # Short timeout for quick check
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
@@ -121,11 +129,24 @@ if uploaded_file:
     st.write("File uploaded successfully.")
     
     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-    # Show a spinner while waiting for the backend response
-    with st.spinner("⏳ The server is waking up! This may take 50-60 seconds. Please wait..."):
-        response = requests.post(f"{BASE_URL}/upload/", files=files)
-    # response = requests.post(f"{BASE_URL}/upload/", files=files)
-    
+
+    # Check backend status before making the request
+    if not is_backend_active():
+        with st.spinner("⏳ Waking up the server... This may take ~1 minute. Please wait..."):
+            # Wait for the server to become active (poll every 10 seconds)
+            max_wait_time = 60  # 1 minute
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                if is_backend_active():
+                    break  # Exit loop if backend wakes up
+                time.sleep(10)  # Check every 10 seconds
+
+    #  # Now upload the file
+    # with st.spinner("⏳ Uploading file... Please wait..."):
+    response = requests.post(f"{BASE_URL}/upload/", files=files)
+
+
     if response.status_code == 200:
         result = response.json()
         date_range = result.get("date_range", [])

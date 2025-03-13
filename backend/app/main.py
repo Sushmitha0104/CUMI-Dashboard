@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from fastapi.responses import JSONResponse 
 from io import BytesIO
+import time
 from app.model import (
     read_excel_file, clean_data, standardize_column_names_and_convert_dates,
     get_available_date_range, get_sample_data_for_date, calculate_gbd_values,
@@ -19,6 +20,10 @@ app = FastAPI()
 # ✅ Configure logging
 # logging.basicConfig(level=logging.INFO)
 # logger = logging.getLogger(__name__)
+
+@app.get("/ping")
+async def ping():
+    return {"status": "alive"}
 
 # Define the required sheets and column drop list
 required_sheets = ["7-12", "14-30", "36-70", "80-180", "220F"]
@@ -72,7 +77,7 @@ async def upload_file(file: UploadFile = File(...)):
         cleaned_sheets = clean_data(sheets, column_to_drop)
         standardized_sheets = standardize_column_names_and_convert_dates(cleaned_sheets)
         min_date, max_date = get_available_date_range(standardized_sheets, required_sheets)
-        
+        # time.sleep(7)
         return {"message": "File uploaded successfully", "date_range": [str(min_date.date()), str(max_date.date())]}
      
     except Exception as e:
