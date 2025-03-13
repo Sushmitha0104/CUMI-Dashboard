@@ -396,7 +396,7 @@ def calculate_interpolated_values(final_df, rows_to_interpolate=[6, 16, 19, 20])
     return final_df
 
 #  Step-16: Dropping duplicate rows
-def drop_and_reset_indices(final_df, rows_to_drop=[9, 13, 14, 17]):
+def drop_and_reset_indices(final_df, rows_to_drop=[10, 14, 15, 18]):
     """
     Drops specified rows and resets index for each date's DataFrame in final_df.
     """
