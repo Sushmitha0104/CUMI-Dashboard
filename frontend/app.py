@@ -102,6 +102,13 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+# Function to check server status
+def is_backend_active():
+    try:
+        response = requests.get(f"{BASE_URL}/ping", timeout=3)  # Short timeout for quick check
+        return response.status_code == 200
+    except requests.exceptions.RequestException:
+        return False
 
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
@@ -111,34 +118,32 @@ available_dates = None
 selected_date = None
 sample_data = None
 
-# Add a placeholder for the reload message
-
-
-
 if "default_proportions" not in st.session_state:
     st.session_state["default_proportions"] = [0.35, 0.20, 0.15, 0.10, 0.20]
 if "proportions" not in st.session_state:
     st.session_state["proportions"] = st.session_state["default_proportions"].copy()
 
-
 if uploaded_file:
     st.write("File uploaded successfully.")
     
     files = {"file": (uploaded_file.name, uploaded_file.getvalue(), uploaded_file.type)}
-    start_time = time.time()  # Start timing
-    response = requests.post(f"{BASE_URL}/upload/", files=files)  # Send request
 
+     # Check backend status before making the request
+    if not is_backend_active():
+        with st.spinner("⏳ Waking up the server... This may take ~1 minute. Please wait..."):
+            # Wait for the server to become active (poll every 10 seconds)
+            max_wait_time = 60  # 1 minute
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait_time:
+                if is_backend_active():
+                    break  # Exit loop if backend wakes up
+                time.sleep(10)  # Check every 10 seconds
+
+    #  # Now upload the file
+    # with st.spinner("⏳ Uploading file... Please wait..."):
+    response = requests.post(f"{BASE_URL}/upload/", files=files)
     
-    elapsed_time = time.time() - start_time  # Measure elapsed time
-
-    if elapsed_time > 5:  # Only show spinner if response time exceeds 10 seconds
-        with st.spinner("⏳ The server is waking up! This may take 50-60 seconds. Please wait..."):
-            while elapsed_time < 50:  # Max wait time
-                response = requests.post(f"{BASE_URL}/upload/", files=files)
-                elapsed_time = time.time() - start_time
-
-                if response.status_code == 200:
-                    break  # Stop waiting when response is received
     
     if response.status_code == 200:
         result = response.json()

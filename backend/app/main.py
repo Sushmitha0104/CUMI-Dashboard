@@ -20,6 +20,10 @@ app = FastAPI()
 # logging.basicConfig(level=logging.INFO)
 # logger = logging.getLogger(__name__)
 
+@app.get("/ping")
+async def ping():
+    return {"status": "alive"}
+
 # Define the required sheets and column drop list
 required_sheets = ["7-12", "14-30", "36-70", "80-180", "220F"]
 column_to_drop = ["Samples No."]
