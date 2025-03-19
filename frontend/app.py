@@ -113,7 +113,7 @@ def is_backend_active():
 
 uploaded_file = st.file_uploader("Upload a CSV or Excel file", type=["csv", "xlsx"])
 
-BASE_URL = "http://127.0.0.1:8000"
+BASE_URL = "https://prac-ic2k.onrender.com"
 
 available_dates = None
 selected_date = None
