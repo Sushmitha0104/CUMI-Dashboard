@@ -205,7 +205,7 @@ if uploaded_file:
 
                         # Define initial proportions as a DataFrame (for display & editing)
                         proportions_df = pd.DataFrame({
-                            "Sheet Name": ["7-12", "14-30", "36-70", "80-180", "220F"],
+                            "Sheet": ["H(7-12)", "H(14-30)", "H(36-70)", "H(80-180)", "H(220)"],
                             "Proportion": st.session_state["proportions"]  # Default values (sum = 1)
                         })
 
@@ -261,7 +261,7 @@ if uploaded_file:
                             st.write("### 📊 Edit Mixing Proportions")
 
                             proportions_df = pd.DataFrame({
-                                "Sheet Name": ["7-12", "14-30", "36-70", "80-180", "220F"],
+                                "Sheet": ["H(7-12)", "H(14-30)", "H(36-70)", "H(80-180)", "H(220)"],
                                 "Proportion": st.session_state["proportions"]  
                             })
 
@@ -274,6 +274,7 @@ if uploaded_file:
 
                             updated_proportions = updated_proportions_df["Proportion"].tolist()
                             total_proportion = sum(updated_proportions)
+                            print(total_proportion)
 
 
                             # ✅ Check if any proportion is negative
@@ -295,7 +296,7 @@ if uploaded_file:
                             st.write("### 📊 Edit Mixing Proportions")
                             # Default proportions for Modified q-Values (reset when selecting this option)
                             proportions_df = pd.DataFrame({
-                                "Sheet Name": ["7-12", "14-30", "36-70", "80-180", "220F"],
+                                "Sheet": ["H(7-12)", "H(14-30)", "H(36-70)", "H(80-180)", "H(220)"],
                                 "Proportion": st.session_state["proportions"] 
                             })
 
@@ -340,7 +341,7 @@ if uploaded_file:
                             st.write("### 📊 Edit Mixing Proportions")
                             # ✅ Always reset proportions to default values
                             proportions_df = pd.DataFrame({
-                                "Sheet Name": ["7-12", "14-30", "36-70", "80-180", "220F"],
+                                "Sheet": ["H(7-12)", "H(14-30)", "H(36-70)", "H(80-180)", "H(220)"],
                                 "Proportion": st.session_state["proportions"]
                             })
 
@@ -392,7 +393,7 @@ if uploaded_file:
                                 # payload["updated_proportions"] = ",".join(map(str, updated_proportions))
                             
                                 response = requests.get(f"{BASE_URL}/calculate_q_value/", params={"selected_date": formatted_selected_date, "updated_proportions": ",".join(map(str, updated_proportions))})
-                            
+                                print(response.status_code)
                             elif q_type == "q-value using Modified Andreasen Eq.":
                                 
                                 payload["updated_proportions"] = ",".join(map(str, updated_proportions))
@@ -415,37 +416,42 @@ if uploaded_file:
 
                                     st.write("## Results")
                                     st.write(f"**🔹 Total Volume of the Mix:** `{total_volume:.4f}`")
-                                    st.write(f"**🔹 Specific Gravity of the Mix:** `{specific_gravity:.4f}`")
+                                    st.write(f"**🔹 Specific Gravity of the Mix:** `{specific_gravity:.4f} g/cc`")
 
                                     st.write("### **GBD Values**")
                                     for density, gbd in result["gbd_values"].items():
                                         formatted_density = int(float(density) * 100)
                                         porosity_value = 100 - formatted_density  # Convert packing density to porosity
                                         st.write(f"- **GBD for {porosity_value}% Porosity:** `{gbd:.4f} g/cc`")
-
+                                        print("GBD Done!")
                                         # st.write(f"- **GBD for {formatted_density}% Packing Density:** `{gbd:.4f} g/cc`")
 
                                 elif q_type == "q-value using Andreasen Eq.":
+                                    
                                     st.write("## Results")
-
+                                    
                                     # ✅ Display q-values **first**
                                     q_values = result.get("q_values", [])
+                                    
                                     if q_values:
                                         
                                         for q_data in q_values:
                                             st.markdown(f"####  q-value on {q_data['Date']}: **`{q_data['q-value']:.4f}`**", unsafe_allow_html=True)
+
 
                                     # ✅ Collapse the intermediate table and regression plot for cleaner UI
                                     with st.expander("📊 Show Processed Data Table & Regression Graph", expanded=False):
                                         df_intermediate = pd.DataFrame(result.get("intermediate_table", []))
                                         if not df_intermediate.empty:
                                             # ✅ Rename columns for readability
-                                            df_intermediate = df_intermediate.drop(columns=["cpft", "pct_cpft"], errors="ignore").rename(columns={
-                                                "Particle Size": "Particle Size (μm)",
-                                                "pct_cpft_interpolated": "%_CPFT (Interpolated)",
+                                            df_intermediate = df_intermediate.drop(columns=["sheet_constant", "pct_poros_CPFT"], errors="ignore").rename(columns={
+                                                "sheet_proportion": "Sheet Proportion",
+                                                "D_value": "Particle Size (μm)",
+                                                "pct_CPFT" : "%_CPFT",
+                                                "pct_CPFT_interpolated": "%_CPFT (Interpolated)",
                                                 "Normalized_D": "D/D_max",
-                                                "Log_D/Dmax": "Log(D/D_max)",
-                                                "Log_pct_cpft": "Log(%_CPFT)"
+                                                "Log_D/Dmax_value": "Log(D/D_max)",
+                                                "Log_pct_CPFT": "Log(%_CPFT)"
                                             })
 
                                             st.write("### 📄 **Processed Data Table**")
@@ -459,7 +465,7 @@ if uploaded_file:
 
                                 elif q_type == "q-value using Modified Andreasen Eq.":
                                     st.write("## Results")
-
+                                    print("In mod q value")
                                     q_values = result.get("q_values", [])
                                     if q_values:
                                         for q_data in q_values:
@@ -480,9 +486,11 @@ if uploaded_file:
 
                                             # ✅ Rename columns for better readability
                                             df_cpft_error = df_cpft_error.rename(columns={
-                                                "Sheet": "Sheet Name",
-                                                "Mesh Size": "Mesh Size",
-                                                "Particle Size": "Particle Size (μm)"
+                                                "D_value": "Particle Size (μm)",
+                                                "pct_CPFT_interpolation": "%_CPFT (Interpolated)",
+                                                "pct_poros_CPFT": "Actual CPFT",
+                                                "calculated_CPFT": "Calculated CPFT",
+                                                "absolute_error": "Absolute Error"
                                             })
                                             # ✅ Rename columns for readability
                                             # df_cpft_error = df_cpft_error.rename(columns={
@@ -491,25 +499,7 @@ if uploaded_file:
                                             #     "Particle Size (μm)": "Particle Size (μm)",
                                             # })
                                             # ✅ Dynamically rename packing density-related columns
-                                            for col in df_cpft_error.columns:
-                                                if "pct_" in col and "_poros_CPFT" in col:
-                                                    density = col.split("_")[1]  # Extract density percentage
-                                                    porosity_value = 100 - int(density)
-                                                    df_cpft_error = df_cpft_error.rename(columns={
-                                                        col: f"Actual CPFT ({porosity_value}% Porosity)"
-                                                    })
-                                                elif "calculated_CPFT_" in col:
-                                                    density = col.split("_")[-1]  # Extract density percentage
-                                                    porosity_value = 100 - int(density)
-                                                    df_cpft_error = df_cpft_error.rename(columns={
-                                                        col: f"Predicted CPFT ({porosity_value}% Porosity)"
-                                                    })
-                                                elif "absolute_error_" in col:
-                                                    density = col.split("_")[-1]  # Extract density percentage
-                                                    porosity_value = 100 - int(density)
-                                                    df_cpft_error = df_cpft_error.rename(columns={
-                                                        col: f"Absolute Error ({porosity_value}% Porosity)"
-                                                    })
+                                            
                                             st.dataframe(df_cpft_error)
 
                                 elif q_type == "q-value using Double Modified Andreasen Eq.":
@@ -518,7 +508,7 @@ if uploaded_file:
                                     double_mod_q_values = result.get("double_modified_q_values", [])
                                     if double_mod_q_values:
                                         for q_data in double_mod_q_values:
-                                            st.markdown(f"####  Double Modified q-value on {q_data['Date']}: **`{q_data['Double_modified_q']:.4f}`**", unsafe_allow_html=True)
+                                            st.markdown(f"####  Double Modified q-value on {q_data['Date']}: **`{q_data['q_value']:.4f}`**", unsafe_allow_html=True)
 
                                     # ✅ Display Intermediate Table
                                     with st.expander("📊 Show Processed Data Table",expanded=False):
@@ -529,8 +519,11 @@ if uploaded_file:
                                             df_intermediate = pd.DataFrame(intermediate_table)
                                             # ✅ Rename columns for readability
                                             df_intermediate = df_intermediate.rename(columns={
-                                                "Log_D/Dmax": "Log(D - D_min) - Log(D_max - D_min)",
-                                                "Log_pct_cpft": "Log(%_CPFT)"
+                                                "pct_poros_CPFT" : "%_CPFT",
+                                                "D_value" : "Particle Size (μm)",
+                                                "x_value": "Log(D - D_min) - Log(D_max - D_min)",
+                                                "log_pct_CPFT": "Log(%_CPFT)"
+                                                
                                             })
                                             st.dataframe(df_intermediate)  # Show the table in Streamlit
 

@@ -3,14 +3,14 @@ import pandas as pd
 import numpy as np
 from fastapi.responses import JSONResponse 
 from io import BytesIO
-from app.model import (
+from app.unchanged import (
     read_excel_file, clean_data, standardize_column_names_and_convert_dates,
     get_available_date_range, get_sample_data_for_date, calculate_gbd_values,
     convert_to_numeric_and_calculate_average, calculate_volume, sum_volumes,
     calculate_sg_mix, get_sheet_constants_from_proportions, 
     convert_to_numeric_and_calculate_average_for_q_values, drop_last_3_and_reverse_cumsum,
-    calculate_cpft, merge_pct_cpft_into_df, calculate_pct_cpft,
-    calculate_interpolated_values,
+    calculate_cpft, calculate_pct_cpft, merge_pct_cpft_into_df,
+    calculate_interpolated_values, drop_and_reset_indices,
     normalize_particle_size, q_value_prediction, predict_mod_q_values, 
     calculate_cpft_error_dict, prepare_mod_q_values, double_modified_q_values, prepare_mod_q_values_double_modified
 )
@@ -23,6 +23,7 @@ app = FastAPI()
 @app.get("/ping")
 async def ping():
     return {"status": "alive"}
+ 
 
 # Define the required sheets and column drop list
 required_sheets = ["7-12", "14-30", "36-70", "80-180", "220F"]
@@ -154,7 +155,6 @@ async def calculate_gbd( selected_date: str = Query(...),
          # ✅ Convert user-input proportions to a dictionary
         proportions_list = [float(value.strip()) for value in updated_proportions.split(",")]
         proportions_dict = dict(zip(required_sheets, proportions_list))  # Assign proportions to correct sheets
-        # print(proportions_dict)
 
         # ✅ Ensure proportions sum up to 1
         if round(sum(proportions_dict.values()), 4) != 1.0:
@@ -210,13 +210,21 @@ async def calculate_q_value(
         cleaned_sheets = clean_data(sheets, column_to_drop)
         standardized_sheets = standardize_column_names_and_convert_dates(cleaned_sheets)
 
-        sample_data = get_sample_data_for_date(standardized_sheets, required_sheets, selected_date)
-        if not sample_data or all(df is None or df.empty for df in sample_data.values()):
-            raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
-        
         # ✅ Convert proportions from query string to dictionary
         proportions_list = [float(value) for value in updated_proportions.split(",")]
         proportions = dict(zip(["7-12", "14-30", "36-70", "80-180", "220F"], proportions_list))
+        # print(proportions)
+
+        # ✅ Filter out sheets with zero proportions
+        valid_sheets = [sheet for sheet in required_sheets if proportions.get(sheet, 0) > 0]
+
+        # ✅ Get sample data for selected date (only valid sheets)
+        sample_data = {sheet: get_sample_data_for_date(standardized_sheets, [sheet], selected_date)[sheet] for sheet in valid_sheets}
+
+        if not sample_data or all(df is None or df.empty for df in sample_data.values()):
+            print(f"⚠️ Debug: No sample data found for date {selected_date}")
+            raise HTTPException(status_code=400, detail=f"No sample data found for {selected_date}")
+        
 
         # ✅ Compute sheet constants dynamically
         sheet_constants = get_sheet_constants_from_proportions(proportions)
@@ -227,85 +235,30 @@ async def calculate_q_value(
             raise HTTPException(status_code=400, detail=f"No valid averages computed for {selected_date}")
 
         weights, cum_sum = drop_last_3_and_reverse_cumsum(averages, selected_date)
-
         cpft = calculate_cpft(cum_sum, proportions, selected_date)
-
-        final_df = merge_pct_cpft_into_df(mesh_size_to_particle_size, cpft, proportions)
-
-        print("After merge")
-        print(final_df[selected_date])
-        print(proportions)
-        # final_df = calculate_cpft(final_df, proportions, selected_date)
-
-        # pct_cpft = calculate_pct_cpft(cpft, sheet_constants, selected_date)
-        
-        # print("Before merge")
+        pct_cpft = calculate_pct_cpft(cpft, sheet_constants, selected_date)
 
         # ✅ Merge into single DataFrame
+        final_df = merge_pct_cpft_into_df(mesh_size_to_particle_size, pct_cpft, valid_sheets)
         
-        print("After cpft")
-        print(final_df[selected_date])
+        # ✅ 🔥 Insert the New Sample Here (Before Interpolation)
+        new_sample = pd.DataFrame({
+            'Sheet': ['7-12'],
+            'Mesh Size': ['+1'],
+            'cpft': [100],
+            'pct_cpft': [100],
+            'Particle Size': [3500]  # This column was added during merging
+        })
 
-        final_df = calculate_pct_cpft(final_df, sheet_constants, selected_date)
-        
-        print("After pct")
-        print(final_df[selected_date])
-        
-        # # ✅ 🔥 Insert the New Sample Here (Before Interpolation)
-        # new_sample = pd.DataFrame({
-        #     'Sheet': ['7-12'],
-        #     'Mesh Size': ['+1'],
-        #     'cpft': [100],
-        #     'pct_cpft': [100],
-        #     'Particle Size': [3500]  # This column was added during merging
-        # })
-
-        # # ✅ Insert new sample at the beginning (index 0) for each date
-        # for date in final_df:
-        #     final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
-
-        
-
-        final_df = calculate_interpolated_values(final_df, proportions)
-
-        print("After interpolation")
-        print(final_df[selected_date].head())
-
-        
+        # ✅ Insert new sample at the beginning (index 0) for each date
         for date in final_df:
+            final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
 
-            # ✅ Step 1: Drop "Cumulative Sum" column
-            final_df[date] = final_df[date].drop(columns=["Cumulative Sum"], errors="ignore")
-
-            # ✅ Step 2: Reorder columns to make "Sheet" the first column
-            column_order = ["Sheet", "Mesh Size", "cpft", "Particle Size", "pct_cpft", "pct_cpft_interpolated"]
-            final_df[date] = final_df[date][column_order]
-
-        # ✅ Insert new sample ONLY if 7-12 is NOT zero
-        if proportions.get("7-12", 1) > 0:
-            new_sample = pd.DataFrame({
-                'Sheet': ['7-12'],
-                'Mesh Size': ['+1'],
-                'cpft': [100],
-                'Particle Size': [3500],  # This column was added during merging
-                'pct_cpft': [100],
-                'pct_cpft_interpolated': [100]
-            })
-
-            for date in final_df:
-                final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
         
-        print("After adding new sample")
         
-        print(final_df[selected_date].head())
-
-
-        # final_df = drop_and_reset_indices(final_df)
+        final_df = calculate_interpolated_values(final_df, valid_sheets)
+        final_df = drop_and_reset_indices(final_df, valid_sheets)
         final_df = normalize_particle_size(final_df)
-
-        print("After normalizing before q-value prediction:")
-        print(final_df[selected_date][["Normalized_D", "pct_cpft_interpolated"]].head())
-
 
         # final_df = add_sample_for_q_values(final_df)  # ✅ Add new sample to dataframe
 
@@ -321,15 +274,6 @@ async def calculate_q_value(
             cached_final_df[selected_date] = final_df
 
         cached_q_values[selected_date] = q_value_prediction(final_df)  # Store q-values for later use
-
-        print("After q value prediction")
-
-        print(cached_q_values)
-        print(cached_q_values[selected_date].head())
-        print(type(selected_date))
-
-        # print(cached_q_values[selected_date][["Log_D/Dmax", "Log_pct_cpft"]])
-
         # # Store q-values for later use
         # print(f"🛠️ Debug: final_df structure for {selected_date}: {type(final_df)}")
         # print(f"🛠️ Debug: final_df contents:\n{final_df}")
@@ -342,7 +286,7 @@ async def calculate_q_value(
         #     "Log_pct_cpft": "Log(%_CPFT)"
         # })
 
-        print(final_df)
+
         return {
             "message": f"q-value Calculation for {selected_date}",
             "intermediate_table": final_df[selected_date].to_dict(orient="records"),
@@ -354,7 +298,6 @@ async def calculate_q_value(
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
-
 
 @app.get("/calculate_q_value_modified_andreason/")
 async def calculate_q_value_modified_andreason(
@@ -418,7 +361,7 @@ async def calculate_q_value_modified_andreason(
         
         
         final_df = calculate_interpolated_values(final_df)
-        # final_df = drop_and_reset_indices(final_df)
+        final_df = drop_and_reset_indices(final_df)
         final_df = normalize_particle_size(final_df)
 
         # final_df = add_sample_for_q_values(final_df)  # ✅ Add new sample to dataframe
@@ -486,6 +429,7 @@ async def calculate_q_value_modified_andreason(
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}   This is the error")
     
 
+
 # ✅ **New API Endpoint for Double Modified q-values**
 @app.get("/calculate_q_value_double_modified/")
 async def calculate_q_value_double_modified(
@@ -547,7 +491,7 @@ async def calculate_q_value_double_modified(
             final_df[date] = pd.concat([new_sample, final_df[date]], ignore_index=True)
 
         final_df = calculate_interpolated_values(final_df)
-        # final_df = drop_and_reset_indices(final_df)
+        final_df = drop_and_reset_indices(final_df)
         final_df = normalize_particle_size(final_df)
 
         # final_df = add_sample_for_q_values(final_df)  # ✅ Add new sample to dataframe

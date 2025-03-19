@@ -79,8 +79,6 @@ def standardize_column_names_and_convert_dates(clean_data):
         for col in df.columns:
             if "Received" in col and "Date" in col:
                 df.rename(columns={col: "Received Date"}, inplace=True)
-            if "Total" in col or "total" in col:
-                df.rename(columns={col: "Total"}, inplace=True)
         if "Received Date" in df.columns:
             df["Received Date"] = pd.to_datetime(df["Received Date"], format="%d.%m.%y", errors="coerce")
     return clean_data
@@ -216,8 +214,6 @@ def convert_to_numeric_and_calculate_average_for_q_values(sample_data, selected_
         if df is None or df.empty:
             averages[selected_date][sheet] = None
             continue
-      
-
 
         numeric_df = df.iloc[:, 1:].apply(pd.to_numeric, errors="coerce")
         numeric_df = numeric_df.dropna(axis=1, how="all")
@@ -259,7 +255,6 @@ def drop_last_3_and_reverse_cumsum(average_data, selected_date):
     cum_sum[date] = {}
 
     for sheet, df in sheet_data.items():
-
         if df is None or not isinstance(df, pd.DataFrame):
             weights[date][sheet] = None
             cum_sum[date][sheet] = None
@@ -288,8 +283,9 @@ def drop_last_3_and_reverse_cumsum(average_data, selected_date):
 
     return weights, cum_sum
 
-def calculate_cpft(cum_sum, multipliers, selected_date):
 
+# Step 12: Calculate cpft
+def calculate_cpft(cum_sum, multipliers, selected_date):
     """
     Calculates CPFT values for the selected date.
     """
@@ -299,182 +295,75 @@ def calculate_cpft(cum_sum, multipliers, selected_date):
     cpft = {}
     cpft[date] = {}
 
-    for sheet in multipliers.keys():  # Ensure all sheets are processed
-        df = sheet_data.get(sheet)
-
+    for sheet, df in sheet_data.items():
         if df is not None:
-            multiplier = multipliers.get(sheet, 0)  # ✅ Use 0 if multiplier is missing
-            df['cpft'] = df['Cumulative Sum'] * multiplier
-            cpft[date][sheet] = df
-        else:
-            cpft[date][sheet] = None  # ✅ Maintain structure
+            multiplier = multipliers.get(sheet)
+            if multiplier:
+                df['cpft'] = df['Cumulative Sum'] * multiplier
+                cpft[date][sheet] = df
 
     return cpft
 
-def merge_pct_cpft_into_df(mesh_size_to_particle_size, cpft, proportions):
+# Step -13: Calculate pct_cpft values
+def calculate_pct_cpft(cpft, sheet_constants, selected_date):
+    """
+    Calculates Percentage CPFT for selected date.
+    """
+    date = selected_date
+    sheet_data = cpft.get(date, {})
+
+    pct_cpft = {}
+    pct_cpft[date] = {}
+
+    for sheet, df in sheet_data.items():
+        if df is not None:
+            constant = sheet_constants.get(sheet, 0)
+            df['pct_cpft'] = df['cpft'] + constant
+            df['Sheet'] = sheet
+            df_result = df[['Sheet', 'Mesh Size', 'cpft', 'pct_cpft']]
+            pct_cpft[date][sheet] = df_result
+
+    return pct_cpft
+
+
+# step -14: Merge into single df
+def merge_pct_cpft_into_df(mesh_size_to_particle_size, pct_cpft, valid_sheets):
     final_df = {}
 
-    for date, sheet_data in cpft.items():
-        valid_dfs = [df.assign(Sheet=sheet) for sheet, df in sheet_data.items() if df is not None and not df.empty]  
-   
+    for date, sheet_data in pct_cpft.items():
+        valid_dfs = [df for sheet, df in sheet_data.items() if df is not None and sheet in valid_sheets]
+
 
         if not valid_dfs:  # ✅ Prevent "No objects to concatenate"
-            final_df[date] = pd.DataFrame(columns=['Sheet', 'Mesh Size', 'Cumulative Sum', 'Particle Size'])
-            continue
-        
+            raise ValueError(f"No valid data for merging on {date}")
 
         final_df[date] = pd.concat(valid_dfs, ignore_index=True)
         final_df[date]['Particle Size'] = final_df[date]['Mesh Size'].map(mesh_size_to_particle_size)
 
-        final_df[date] = final_df[date].sort_values(by="Particle Size", ascending=False).reset_index(drop=True)
-
-        # ✅ Step 1: Remove duplicates BEFORE adjusting sheet names
-        final_df[date] = final_df[date].drop(index=[i for i in [8, 10, 12, 19] if i in final_df[date].index]).reset_index(drop=True)
-
-
-        # ✅ Step 2: Adjust sheet names dynamically
-        row_counts = [4, 4, 3, 4, 4]  # ✅ Adjusted row distribution for sheets
-        sheet_names = ['7-12', '14-30', '36-70', '80-180', '220F']
-
-        start_idx = 0
-        for i, sheet in enumerate(sheet_names):
-            end_idx = start_idx + row_counts[i]
-            final_df[date].iloc[start_idx:end_idx, final_df[date].columns.get_loc('Sheet')] = sheet
-            start_idx = end_idx  # Move to the next group
-
-        # ✅ Step 3: Remove rows based on zero proportions AFTER naming is corrected
-        rows_to_remove = []
-        if proportions.get("7-12", 1) == 0:
-            rows_to_remove.extend([0, 1, 2, 3])
-        if proportions.get("14-30", 1) == 0:
-            rows_to_remove.extend([4, 5, 6, 7])
-        if proportions.get("36-70", 1) == 0:
-            rows_to_remove.extend([8, 9, 10])
-        if proportions.get("80-180", 1) == 0:
-            rows_to_remove.extend([11, 12, 13, 14])
-        if proportions.get("220F", 1) == 0:
-            rows_to_remove.extend([15, 16, 17, 18])
-
-        # ✅ Remove the identified rows safely
-        final_df[date] = final_df[date].drop(index=[i for i in rows_to_remove if i in final_df[date].index]).reset_index(drop=True)
-
-
     return final_df
 
 
-
-def calculate_pct_cpft(final_df, sheet_constants, selected_date):
-    """
-    Calculates Percentage CPFT directly on final_df.
-    """
-    df = final_df[selected_date]  # ✅ Extract the DataFrame for the date
-
-    # ✅ Compute pct_cpft based on sheet_constants
-    df['pct_cpft'] = df['cpft'] + df['Sheet'].map(sheet_constants).fillna(0)
-
-     # ✅ Ensure no NaN values exist in pct_cpft
-    df["pct_cpft"] = df["pct_cpft"].fillna(df["cpft"])
-
-    return final_df  # ✅ Return the updated final_df
-
 # Step-15 : Interpolation
-def calculate_interpolated_values(final_df, proportions, rows_to_interpolate = [2, 4, 5, 8, 12, 14]):
+def calculate_interpolated_values(final_df, valid_sheets):
     """
     Calculates interpolated pct_cpft values for specified rows using linear interpolation.
     """
     for date, df in final_df.items():
         
+         # ✅ Filter df to only include valid sheets
+        df = df[df["Sheet"].isin(valid_sheets)]
 
         # Initialize with original values
-        df['pct_cpft_interpolated'] = df['pct_cpft']  
+        df['pct_cpft_interpolated'] = df['pct_cpft'] 
 
+        # ✅ Identify rows where `pct_cpft` is missing (instead of using fixed indices)
+        missing_rows = df[df['pct_cpft'].isna()].index.tolist() 
 
-        if "pct_cpft_interpolated" not in df.columns or "Particle Size" not in df.columns:
-            raise ValueError("Required columns missing from final_df.")
+        # ✅ Remove missing rows from valid data
+        valid_rows = df.drop(index=missing_rows)
 
-        # ✅ Identify which sheets have zero proportions
-        zero_sheets = [sheet for sheet, value in proportions.items() if value == 0]
-
-        # ✅ Determine which rows to interpolate based on zero proportion sheets
-        rows_to_interpolate = set()  # Using a set to avoid duplicates
-
-        if not zero_sheets:  # ✅ Case when all sheets are non-zero
-            rows_to_interpolate.update([2, 4, 5, 8, 12, 14])  # Standard interpolation rows
-
-
-        if "7-12" in zero_sheets:
-            rows_to_interpolate.update([0, 1, 4, 8, 10])
-        if "14-30" in zero_sheets:
-            rows_to_interpolate.update([2, 4, 8, 10])
-        if "36-70" in zero_sheets:
-            rows_to_interpolate.update([2, 4, 5, 9, 11])
-        if "80-180" in zero_sheets:
-            rows_to_interpolate.update([2, 4, 5, 8])
-        if "220F" in zero_sheets:
-            rows_to_interpolate.update([2, 4, 5, 8, 12, 14])
-
-         # ✅ Special cases when two sheets are zero
-        if set(["7-12", "14-30"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 4, 6])
-        if set(["7-12", "36-70"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1, 5, 7])
-        if set(["7-12", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1, 4])
-        if set(["7-12", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1, 4, 8, 10])
-        if set(["14-30", "36-70"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 5, 7])
-        if set(["14-30", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4])
-        if set(["14-30", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4, 8, 10])
-        if set(["36-70", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4, 5])
-        if set(["36-70", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4, 5, 9, 11])
-        if set(["80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4, 5, 8])
-
-         # ✅ Special cases when three sheets are zero
-        if set(["7-12", "14-30", "36-70"]).issubset(zero_sheets):
-            rows_to_interpolate.update([1, 3])
-        if set(["7-12", "14-30", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0])
-        if set(["7-12", "14-30", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 4, 6])
-        if set(["7-12", "36-70", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1])
-        if set(["7-12", "36-70", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1, 5, 7])
-        if set(["7-12", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1, 4])
-        if set(["14-30", "36-70", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2])
-        if set(["14-30", "36-70", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 5, 7])
-        if set(["14-30", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4])
-        if set(["36-70", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2, 4, 5])
-
-        # ✅ Special cases when four sheets are zero
-        if set(["7-12", "14-30", "36-70", "80-180"]).issubset(zero_sheets):
-            rows_to_interpolate = set()  # No interpolation needed
-        if set(["7-12", "14-30", "36-70", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([1, 3])
-        if set(["7-12", "14-30", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0])
-        if set(["7-12", "36-70", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([0, 1])
-        if set(["14-30", "36-70", "80-180", "220F"]).issubset(zero_sheets):
-            rows_to_interpolate.update([2])
-
-        # Remove rows to be interpolated and store the valid data
-        valid_rows = df.drop(index=[i for i in rows_to_interpolate if i in df.index])
-
-
-        for i in rows_to_interpolate:
-            if i >= len(df) or i not in df.index:  # Ensure index is within bounds
+        for i in missing_rows:
+            if i not in df.index:  # Ensure index is within bounds
                 continue  
 
             current_particle_size = df.loc[i, 'Particle Size']
@@ -502,16 +391,26 @@ def calculate_interpolated_values(final_df, proportions, rows_to_interpolate = [
                 df.at[i, 'pct_cpft_interpolated'] = np.round(interp_func(current_particle_size), 3)
     return final_df
 
-# #  Step-16: Dropping duplicate rows
-# def drop_and_reset_indices(final_df, rows_to_drop=[10, 14, 15, 18]):
-#     """
-#     Drops specified rows and resets index for each date's DataFrame in final_df.
-#     """
-#     for date, df in final_df.items():
-#         df = df.drop(rows_to_drop, axis=0, errors='ignore')
-#         final_df[date] = df.reset_index(drop=True)
+#  Step-16: Dropping duplicate rows
+def drop_and_reset_indices(final_df, valid_sheets):
+    """
+    Drops specified rows and resets index for each date's DataFrame in final_df.
+    """
+    for date, df in final_df.items():
+
+        # ✅ Filter df to only include valid sheets
+        df = df[df["Sheet"].isin(valid_sheets)]
+
+         # ✅ Identify duplicate rows dynamically
+        duplicate_rows = df[df.duplicated(subset=['Particle Size'], keep='first')].index
+
+        # ✅ Drop duplicate rows dynamically
+        df = df.drop(duplicate_rows, axis=0)
+
+        # ✅ Reset index
+        final_df[date] = df.reset_index(drop=True)
     
-#     return final_df
+    return final_df
 
 # Step-17: Normalize particle size
 def normalize_particle_size(final_df):
@@ -519,10 +418,10 @@ def normalize_particle_size(final_df):
     Normalizes the Particle Size by dividing by the maximum Particle Size for each date.
     """
     for date, df in final_df.items():
-
-        if not df.empty:
-            d_max = df["Particle Size"].max()
-            df['Normalized_D'] = df['Particle Size'] / d_max
+      
+        
+        d_max = df["Particle Size"].max()
+        df['Normalized_D'] = df['Particle Size'] / d_max
       
     
     return final_df
@@ -538,9 +437,6 @@ def q_value_prediction(final_df):
 
         df["Log_D/Dmax"] = np.log(df["Normalized_D"])
         df["Log_pct_cpft"] = np.log(df["pct_cpft_interpolated"])
-
-        print(df[["Log_D/Dmax", "Log_pct_cpft"]])
-
 
         slope, intercept, r_value, p_value, std_err = linregress(df["Log_D/Dmax"], df["Log_pct_cpft"])
 
