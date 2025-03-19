@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+pandas
+numpy
+openpyxl
+gunicorn
+python-multipart
+scipy
+requests
+datetime
+matplotlib
+
+
